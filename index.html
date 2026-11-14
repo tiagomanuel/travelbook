@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#143c37">
+  <meta name="description" content="TravelBook — viagens, mapas, itinerários e despesas num só lugar.">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="TravelBook">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <title>TravelBook · O teu guia de viagem</title>
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
+  <link rel="stylesheet" href="./assets/style.css">
+</head>
+<body>
+  <div class="app-frame">
+    <aside class="sidebar" aria-label="Navegação">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">✦</span><div><strong>TravelBook</strong><small>O vosso mundo, organizado.</small></div></div>
+      <div class="sidebar-label">EXPLORAR</div>
+      <nav id="desktop-nav" class="desktop-nav" aria-label="Páginas"></nav>
+      <div class="sidebar-bottom"><span class="privacy-dot"></span> Dados guardados neste dispositivo <a href="#" data-action="about-storage">Saber mais</a></div>
+    </aside>
+    <div class="page-wrap">
+      <header class="topbar">
+        <div class="mobile-brand"><span class="brand-mark small" aria-hidden="true">✦</span><strong>TravelBook</strong></div>
+        <div class="trip-picker"><label class="sr-only" for="trip-select">Selecionar viagem</label><select id="trip-select" aria-label="Selecionar viagem"></select><button class="icon-btn" type="button" data-action="new-trip" title="Nova viagem" aria-label="Nova viagem">＋</button></div>
+        <div class="header-end"><span id="connection-status" class="connection" aria-live="polite"><span class="connection-dot"></span> Online</span><button class="icon-btn backup-shortcut" data-action="show-backup" type="button" title="Cópias de segurança" aria-label="Cópias de segurança">⇩</button></div>
+      </header>
+      <main id="view" class="main-view" tabindex="-1"><div class="loading-panel">A abrir o TravelBook…</div></main>
+    </div>
+    <nav id="mobile-nav" class="mobile-nav" aria-label="Navegação principal"></nav>
+    <button class="fab" id="fab" data-action="new-place" type="button" aria-label="Adicionar local">＋<span>Local</span></button>
+  </div>
+  <dialog id="modal" class="modal"><div id="modal-content"></div></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+  <script type="module" src="./assets/app.js"></script>
+</body>
+</html>
