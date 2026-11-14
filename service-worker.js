@@ -1,7 +1,7 @@
 /* Cache da interface e da biblioteca Leaflet. Sem prefetch de mosaicos OSM. */
-const CACHE='travelbook-shell-v1.0.1';
+const CACHE='travelbook-shell-v1.1-sync';
 const BASE=self.registration.scope;
-const SHELL=['./','./index.html','./assets/style.css','./assets/app.js','./assets/db.js','./assets/utils.js','./icons/icon.svg','./icons/icon-192.png','./icons/icon-512.png','./manifest.webmanifest'];
+const SHELL=['./','./index.html','./assets/style.css','./assets/app.js','./assets/db.js','./assets/sync.js','./assets/utils.js','./icons/icon.svg','./icons/icon-192.png','./icons/icon-512.png','./manifest.webmanifest'];
 const LEAFLET=[
  'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css',
  'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js'

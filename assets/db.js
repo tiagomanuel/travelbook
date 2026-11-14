@@ -1,4 +1,4 @@
-/* IndexedDB: sem servidor, todos os dados são locais ao navegador/dispositivo. */
+/* IndexedDB: dados locais persistentes; a sincronização remota é facultativa. */
 const NAME = 'travelbook-v1';
 const VERSION = 1;
 const TABLES = ['trips', 'places', 'visits', 'expenses'];
@@ -33,19 +33,32 @@ export async function all(table) {
   const db = await connect();
   return requestToPromise(db.transaction(table).objectStore(table).getAll());
 }
+function noteChanged() {
+  localStorage.setItem('travelbook.sync.dirty','1');
+  localStorage.setItem('travelbook.sync.counter',String(Number(localStorage.getItem('travelbook.sync.counter')||'0')+1));
+  window.dispatchEvent(new Event('travelbook-data-changed'));
+}
 export async function put(table, record) {
   const db = await connect();
-  return requestToPromise(db.transaction(table, 'readwrite').objectStore(table).put(record));
+  const tx = db.transaction(table,'readwrite');
+  tx.objectStore(table).put(record);
+  await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
+  noteChanged();
 }
+
 export async function remove(table, id) {
-  const db = await connect();
-  return requestToPromise(db.transaction(table, 'readwrite').objectStore(table).delete(id));
+  const db=await connect();
+  const tx=db.transaction(table,'readwrite');
+  tx.objectStore(table).delete(id);
+  await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
+  noteChanged();
 }
+
 export async function snapshot() {
   const rows = await Promise.all(TABLES.map(t => all(t)));
   return Object.fromEntries(TABLES.map((table, index) => [table, rows[index]]));
 }
-export async function replaceAll(data) {
+export async function replaceAll(data,{remote=false}={}) {
   const db = await connect();
   const tx = db.transaction(TABLES, 'readwrite');
   for (const table of TABLES) {
@@ -54,7 +67,7 @@ export async function replaceAll(data) {
     for (const row of data[table]) store.put(row);
   }
   return new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
+    tx.oncomplete = () => {if(!remote)noteChanged();resolve();};
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error || new Error('Transação cancelada'));
   });

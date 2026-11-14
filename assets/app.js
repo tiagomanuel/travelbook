@@ -1,5 +1,6 @@
 import { all, put, remove, snapshot, replaceAll, makeId, validateBackup } from './db.js';
 import { CATS, EXPENSE_CATS, CURRENCIES, h, shortDate, longDate, money, coordsValid, isoToday, datesBetween, appleMaps, download, toCSV } from './utils.js';
+import {isConfigured, isDirty, hasPaired, getSyncSummary, saveSyncConfig, disconnect, syncNow} from './sync.js';
 
 const $=selector=>document.querySelector(selector);
 const NAV=[['today','◷','Hoje'],['map','▧','Mapa'],['plan','▤','Roteiro'],['expenses','◈','Despesas'],['more','☰','Mais']];
@@ -47,7 +48,7 @@ function render(){
   if(state.tab==='map')setTimeout(initMap,50);
 }
 function navigate(tab){state.tab=tab;if(tab==='plan')state.planDay=chosenDay();if(tab!=='map'){state.searchResults=[];state.pointsMode=false;}render();window.scrollTo({top:0,behavior:'instant'});}
-function renderWelcome(){return `<div class="welcome"><div class="welcome-art" aria-hidden="true"></div><div class="eyebrow">UM LUGAR PARA AS VOSSAS VIAGENS</div><h1>As melhores histórias começam com um destino.</h1><p class="subtitle">Guarda locais, organiza visitas por dia, consulta o mapa e acompanha as despesas — numa aplicação pensada para o telemóvel.</p>${btn('new-trip','＋ Criar a primeira viagem','primary full')}${btn('demo','✦ Experimentar com uma viagem de exemplo','ghost full')}<div class="welcome-links"><button class="btn-inline" data-action="show-backup">Importar cópia de segurança</button></div><p class="tip">Os dados são guardados apenas neste dispositivo. Podes exportar uma cópia a qualquer momento.</p></div>`;}
+function renderWelcome(){return `<div class="welcome"><div class="welcome-art" aria-hidden="true"></div><div class="eyebrow">UM LUGAR PARA AS VOSSAS VIAGENS</div><h1>As melhores histórias começam com um destino.</h1><p class="subtitle">Guarda locais, organiza visitas por dia, consulta o mapa e acompanha as despesas — numa aplicação pensada para o telemóvel.</p>${btn('new-trip','＋ Criar a primeira viagem','primary full')}${btn('demo','✦ Experimentar com uma viagem de exemplo','ghost full')}<div class="welcome-links"><button class="btn-inline" data-action="sync-settings">☁ Ligar aos dados partilhados</button> · <button class="btn-inline" data-action="show-backup">Importar cópia de segurança</button></div><p class="tip">Os dados estão sempre guardados neste dispositivo. A sincronização entre aparelhos é opcional e requer configurar a Cloudflare.</p></div>`;}
 function renderToday(){
   const t=trip(), ps=places(), vs=visits(), es=expenses(), today=chosenDay(), selected=vs.filter(v=>v.date===today).sort(sortVisits);
   const done=selected.filter(v=>v.done).length;
@@ -110,8 +111,9 @@ function renderExpenses(){
   return `<div class="page-head"><div><div class="eyebrow">ORÇAMENTO</div><h1>Despesas</h1><p class="subtitle">Regista quem pagou, categoriza os gastos e exporta em CSV.</p></div><div class="page-actions">${btn('new-expense','＋ Despesa','primary small')}</div></div><div class="metrics">${summary}<div class="metric"><strong>${es.length}</strong><span>Registos</span></div></div><div class="content-grid"><div>${cardList('Movimentos',rows)}</div><div class="section-stack">${cardList('Por categoria',Object.keys(totals).length?Object.entries(totals).map(([cur])=>EXPENSE_CATS.map(c=>{const val=es.filter(e=>(e.currency||'EUR')===cur&&e.category===c).reduce((sum,e)=>sum+Number(e.amount||0),0);return val?`<div class="overview-list"><span>${h(c)} · ${h(cur)}</span><strong>${h(money(val,cur))}</strong></div>`:'';}).join('')).join(''):'<p class="muted">Ainda sem despesas.</p>')}${cardList('Exportar',`<p class="muted" style="font-size:.85rem">Descarrega um ficheiro CSV que podes abrir no Excel, Numbers ou R.</p>${btn('export-expenses','⇩ Exportar despesas.csv','secondary full')}`)}</div></div><p class="tip">Moedas diferentes são apresentadas separadamente. Esta versão não calcula taxas de câmbio nem saldos de divisão entre pessoas.</p>`;
 }
 function renderMore(){
-  const t=trip();
-  return `<div class="page-head"><div><div class="eyebrow">CONFIGURAÇÕES</div><h1>Viagem e dados</h1><p class="subtitle">O teu briefing, cópias de segurança, exportações e preferências.</p></div></div><div class="settings-grid"><section class="card settings-card"><div class="card-head"><h3>✦ ${h(t.name)}</h3>${btn('edit-trip','Editar','small ghost')}</div><p><strong>Destino:</strong> ${h(t.destination||'Por indicar')}${t.country?' · '+h(t.country):''}</p><p><strong>Datas:</strong> ${t.startDate?shortDate(t.startDate)+' — '+shortDate(t.endDate||t.startDate):'Por definir'}</p><div class="hint" style="white-space:pre-wrap">${h(t.briefing||'Sem briefing. Acrescenta moradas, transportes, reservas e outras informações úteis.')}</div></section><section class="card settings-card"><h3>⇩ Cópia de segurança completa</h3><p>Guarda todas as viagens, locais, horários e despesas num único ficheiro JSON. Podes transferi-lo para outro iPhone.</p><div class="button-stack">${btn('export-json','Descarregar backup JSON','primary small')}${btn('import-json','Importar backup','ghost small')}</div><input type="file" id="backup-file" accept=".json,application/json" class="sr-only"><div class="warning" style="margin-top:13px">A importação substitui todos os dados deste dispositivo. Faz uma cópia antes de importar.</div></section><section class="card settings-card"><h3>▤ Exportar em CSV</h3><p>Ficheiros separados para Excel, Numbers, R ou Python. Exporta a viagem atual.</p><div class="button-stack">${btn('export-trips','Viagens.csv','ghost small')}${btn('export-places','Locais.csv','ghost small')}${btn('export-visits','Roteiro.csv','ghost small')}${btn('export-expenses','Despesas.csv','ghost small')}${btn('export-unified','Tudo.csv','secondary small')}${btn('export-geojson','Mapa.geojson','ghost small')}</div></section><section class="card settings-card"><h3>⌁ Privacidade e modo offline</h3><p>Os teus dados estão guardados localmente neste navegador. O GitHub Pages publica apenas o código da aplicação, não as tuas viagens.</p><p>Esta versão permite consulta e edição offline do conteúdo guardado depois de uma primeira abertura online; o mapa de fundo e a pesquisa exigem Internet.</p><div class="button-stack">${btn('about-storage','Como funciona?','ghost small')}${btn('delete-trip','Eliminar esta viagem','danger small')}</div></section></div>`;
+  const t=trip(); const sync=getSyncSummary();
+  const syncCard=`<section class="card settings-card"><h3>☁ Sincronização privada</h3><p>${sync.configured ? 'Ligação configurada ao Cloudflare Worker.' : 'Lembra-te: por enquanto os dados só existem neste dispositivo. Liga o Worker para partilhar a viagem entre o Mac e os iPhones.'}</p><div class="hint">${sync.configured?`Servidor: ${h(sync.endpoint)}<br>Revisão: ${sync.revision??'por associar'} · ${sync.dirty?'alterações locais por enviar':'sem alterações pendentes'}`:'Sem servidor associado'}</div><div class="button-stack" style="margin-top:12px">${btn('sync-settings',sync.configured?'Alterar ligação Cloudflare':'Configurar Cloudflare','secondary small')}${sync.configured?`${btn('sync-now','↻ Sincronizar agora','primary small')}${btn('sync-receive','↓ Recuperar dados do servidor','ghost small')}${btn('sync-send','↑ Publicar dados locais no servidor','ghost small')}${btn('sync-disconnect','Desligar neste aparelho','danger small')}`:''}</div><p class="tip">Em caso de edição simultânea, a aplicação bloqueia a substituição automática. Faz um backup JSON antes de forçar o envio ou a recuperação.</p></section>`;
+  return `<div class="page-head"><div><div class="eyebrow">CONFIGURAÇÕES</div><h1>Viagem e dados</h1><p class="subtitle">O teu briefing, cópias de segurança, exportações e preferências.</p></div></div><div class="settings-grid">${syncCard}<section class="card settings-card"><div class="card-head"><h3>✦ ${h(t.name)}</h3>${btn('edit-trip','Editar','small ghost')}</div><p><strong>Destino:</strong> ${h(t.destination||'Por indicar')}${t.country?' · '+h(t.country):''}</p><p><strong>Datas:</strong> ${t.startDate?shortDate(t.startDate)+' — '+shortDate(t.endDate||t.startDate):'Por definir'}</p><div class="hint" style="white-space:pre-wrap">${h(t.briefing||'Sem briefing. Acrescenta moradas, transportes, reservas e outras informações úteis.')}</div></section><section class="card settings-card"><h3>⇩ Cópia de segurança completa</h3><p>Guarda todas as viagens, locais, horários e despesas num único ficheiro JSON. Podes transferi-lo para outro iPhone.</p><div class="button-stack">${btn('export-json','Descarregar backup JSON','primary small')}${btn('import-json','Importar backup','ghost small')}</div><input type="file" id="backup-file" accept=".json,application/json" class="sr-only"><div class="warning" style="margin-top:13px">A importação substitui todos os dados deste dispositivo. Faz uma cópia antes de importar.</div></section><section class="card settings-card"><h3>▤ Exportar em CSV</h3><p>Ficheiros separados para Excel, Numbers, R ou Python. Exporta a viagem atual.</p><div class="button-stack">${btn('export-trips','Viagens.csv','ghost small')}${btn('export-places','Locais.csv','ghost small')}${btn('export-visits','Roteiro.csv','ghost small')}${btn('export-expenses','Despesas.csv','ghost small')}${btn('export-unified','Tudo.csv','secondary small')}${btn('export-geojson','Mapa.geojson','ghost small')}</div></section><section class="card settings-card"><h3>⌁ Privacidade e modo offline</h3><p>Os teus dados estão guardados localmente neste navegador. O GitHub Pages publica apenas o código da aplicação, não as tuas viagens.</p><p>Esta versão permite consulta e edição offline do conteúdo guardado depois de uma primeira abertura online; o mapa de fundo e a pesquisa exigem Internet.</p><div class="button-stack">${btn('about-storage','Como funciona?','ghost small')}${btn('delete-trip','Eliminar esta viagem','danger small')}</div></section></div>`;
 }
 
 function field(name,label,value='',type='text',attrs=''){return `<div class="form-field"><label for="fld-${name}">${label}</label><input class="field" id="fld-${name}" type="${type}" name="${name}" value="${h(value)}" ${attrs}></div>`;}
@@ -205,7 +207,7 @@ function exportUnified(){
   download(`tudo-${isoToday()}.csv`,toCSV(rows,headers),'text/csv;charset=utf-8');toast('CSV consolidado descarregado.');
 }
 function exportGeoJSON(){const t=trip();const data={type:'FeatureCollection',name:t.name,features:places().filter(p=>coordsValid(p.lat,p.lng)).map(p=>({type:'Feature',geometry:{type:'Point',coordinates:[Number(p.lng),Number(p.lat)]},properties:{name:p.name,category:p.category,address:p.address,notes:p.notes,status:p.status}}))};download(`mapa-${isoToday()}.geojson`,JSON.stringify(data,null,2),'application/geo+json');toast('Mapa GeoJSON descarregado.');}
-async function handleImport(event){const input=event.target, file=input.files?.[0];if(!file)return;try{const text=await file.text();const parsed=JSON.parse(text);const data=validateBackup(parsed);if(!window.confirm(`Importar ${data.trips.length} viagem(ns)? Isto SUBSTITUI todas as viagens atualmente guardadas neste dispositivo.`))return;await replaceAll(data);state.activeTripId=null;state.tab='today';await refresh({preserve:true});toast('Backup importado com sucesso.');}catch(err){toast(`Falha na importação: ${err.message}`);}finally{input.value='';}}
+async function handleImport(event){const input=event.target, file=input.files?.[0];if(!file)return;try{const text=await file.text();const parsed=JSON.parse(text);const data=validateBackup(parsed);if(!window.confirm(`Importar ${data.trips.length} viagem(ns)? Isto SUBSTITUI todas as viagens neste dispositivo${isConfigured()?' e poderá sincronizar esta substituição com o servidor':''}. Faz primeiro um backup.`))return;await replaceAll(data);state.activeTripId=null;state.tab='today';await refresh({preserve:true});toast('Backup importado com sucesso.');}catch(err){toast(`Falha na importação: ${err.message}`);}finally{input.value='';}}
 async function searchPlaces(query){
   if(!navigator.onLine)throw new Error('A pesquisa necessita de Internet.');
   if(Date.now()-state.lastSearch<1300)throw new Error('Aguarda um momento antes de outra pesquisa.');
@@ -216,7 +218,49 @@ async function searchPlaces(query){
   const results=await response.json();state.searchResults=results;
   $('#search-results').innerHTML=results.length?renderSearchResults():'<p class="muted">Sem resultados. Experimenta uma morada mais específica ou toca no mapa.</p>';
 }
-function aboutStorage(){showModal('Privacidade e armazenamento',`<div class="span-2"><div class="hint">Versão GitHub Pages: <strong>não existe servidor de dados</strong>. Os registos são guardados na base IndexedDB deste navegador, neste iPhone ou Mac. Outros aparelhos não recebem automaticamente as alterações.</div><p style="font-size:.87rem;line-height:1.6">Para partilhar uma viagem entre os dois iPhones, exporta um backup JSON num dispositivo e importa-o no outro. A importação substitui os dados do destino. Guarda regularmente backups fora do navegador, porque o iOS pode limpar o armazenamento em determinadas situações.</p><p style="font-size:.87rem;line-height:1.6">A aplicação e os dados já sincronizados abrem sem Internet. O fundo de mapa, a pesquisa de locais e o Apple Maps necessitam de ligação. Não existem utilizadores nem login nesta primeira versão. Um futuro backend privado permitirá sincronização automática e autenticação.</p></div>`,'about');}
+function openSyncSettings(){
+  const info=getSyncSummary();
+  showModal('Ligação privada à Cloudflare',`${field('endpoint','Endereço do Cloudflare Worker *',info.endpoint,'url','required placeholder="https://travelbook-sync.NOME.workers.dev" autocomplete="url"')}<div class="span-2">${field('key','Chave secreta (nunca partilhar no GitHub)', '', 'password',`autocomplete="off" ${info.configured?'placeholder="Em branco para manter a chave guardada"':'required placeholder="Chave privada de 48 caracteres ou mais"'}`)}</div><div class="span-2"><div class="hint">A chave fica guardada apenas neste navegador. O GitHub Pages não recebe nem armazena esta chave. Usa uma chave longa e privada, definida em Cloudflare → Worker → Variables and Secrets.</div></div>`,'sync');
+}
+async function handleSync(action='normal'){
+  if(!isConfigured())return openSyncSettings();
+  if(action==='send' && !window.confirm('ATENÇÃO: substituir os dados online pelos dados DESTE dispositivo? Faz primeiro um backup JSON. Esta operação pode apagar alterações feitas no outro iPhone.'))return;
+  if(action==='receive' && !window.confirm('ATENÇÃO: substituir TODOS os dados deste dispositivo pelos dados do servidor? Antes, descarrega um backup JSON dos dados atuais.'))return;
+  const outcome=await syncNow(action);
+  if(outcome.kind==='need-send'){
+    if(window.confirm('A base de dados online está vazia. Queres publicar AGORA as viagens deste aparelho? Confirma que estás no Mac com os dados mais recentes.'))return handleSync('send');
+    toast('Dados mantidos apenas neste dispositivo.');return;
+  }
+  if(outcome.kind==='need-choice'){
+    toast('Existem dados neste aparelho e no servidor. Faz um backup JSON e escolhe Enviar ou Recuperar em Mais.');
+    return;
+  }
+  if(outcome.kind==='conflict'){
+    toast('Conflito: alterações em dois aparelhos. Nada foi substituído. Faz backup JSON e escolhe como resolver.');
+    return;
+  }
+  if(outcome.kind==='download')await refresh({preserve:true});
+  if(outcome.kind==='upload')toast('Dados enviados com sucesso para a Cloudflare.');
+  else if(outcome.kind==='download')toast('Dados atualizados a partir da Cloudflare.');
+  else toast('Tudo sincronizado.');
+  if(state.tab==='more')render();
+}
+async function configureSync(form){
+  const values=new FormData(form);
+  saveSyncConfig(String(values.get('endpoint')||'').trim(),String(values.get('key')||'').trim());
+  closeModal();toast('Ligação guardada. A verificar os dados…');
+  await handleSync('normal');
+}
+function scheduleSync(){
+  if(!isConfigured()||!hasPaired()||!navigator.onLine)return;
+  clearTimeout(scheduleSync.timer);
+  scheduleSync.timer=setTimeout(async()=>{
+    try{const r=await syncNow();if(r.kind==='download')await refresh({preserve:true});if(r.kind==='conflict')toast('Dados divergentes entre aparelhos: abre Mais → Sincronização.');}
+    catch(e){console.warn('A sincronização fica pendente:',e.message);}
+  },2000);
+}
+function aboutStorage(){showModal('Privacidade e armazenamento',`<div class="span-2"><div class="hint"><strong>IndexedDB</strong> guarda sempre os dados neste dispositivo. ${isConfigured()?'A sincronização usa uma API Cloudflare Worker com chave privada, alojada separadamente do código público.':'Podes ligar a Cloudflare em Mais para sincronizar automaticamente com outros dispositivos.'}</div><p style="font-size:.87rem;line-height:1.6">Quando não há Internet, continuas a editar localmente. Se houver edições simultâneas em aparelhos diferentes, é necessário resolver um conflito manualmente; a aplicação não apaga os dados locais automaticamente.</p><p style="font-size:.87rem;line-height:1.6">O mapa de fundo e as direções Apple Maps exigem Internet. Faz backups JSON regulares para não dependeres apenas do iPhone ou do serviço externo.</p></div>`,'about');}
+
 function toast(message){const el=$('#toast');el.textContent=message;el.classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('visible'),3500);}
 async function onAction(element){
   const action=element.dataset.action,id=element.dataset.id;
@@ -251,6 +295,11 @@ async function onAction(element){
   if(action==='export-geojson')return exportGeoJSON();
   if(action?.startsWith('export-'))return exportCSV(action.replace('export-',''));
   if(action==='show-backup'){navigate('more');return;}
+  if(action==='sync-settings')return openSyncSettings();
+  if(action==='sync-now')return handleSync('normal');
+  if(action==='sync-send')return handleSync('send');
+  if(action==='sync-receive')return handleSync('receive');
+  if(action==='sync-disconnect'){if(window.confirm('Desligar a Cloudflare neste aparelho? As viagens locais mantêm-se.')){disconnect();toast('Ligação desligada.');render();}return;}
   if(action==='import-json')return $('#backup-file')?.click();
   if(action==='about-storage')return aboutStorage();
 }
@@ -262,16 +311,20 @@ async function init(){
   });
   document.addEventListener('submit',async event=>{
     const form=event.target;
-    if(form.id==='editor-form'){event.preventDefault();try{await saveEntity(form);}catch(error){console.error(error);toast(error.message||'Não foi possível guardar.');}}
+    if(form.id==='editor-form'){event.preventDefault();try{if(form.dataset.kind==='sync')await configureSync(form);else await saveEntity(form);}catch(error){console.error(error);toast(error.message||'Não foi possível guardar.');}}
     if(form.id==='map-search'){event.preventDefault();try{await searchPlaces(new FormData(form).get('query')?.trim()||'');}catch(error){toast(error.message);$('#search-results').innerHTML='';}}
   });
   document.addEventListener('change',async event=>{
     if(event.target.id==='trip-select'){state.activeTripId=event.target.value;state.planDay=null;state.mapDay='all';state.searchResults=[];localStorage.setItem('travelbook.activeTripId',state.activeTripId);render();}
     if(event.target.id==='backup-file')await handleImport(event);
   });
-  window.addEventListener('online',renderNav);window.addEventListener('offline',renderNav);
+  window.addEventListener('online',()=>{renderNav();scheduleSync();});window.addEventListener('offline',renderNav);
+  window.addEventListener('travelbook-data-changed',scheduleSync);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleSync();});
+  setInterval(()=>{if(!document.hidden)scheduleSync();},60000);
   $('#modal').addEventListener('click',event=>{if(event.target===$('#modal'))closeModal();});
   await refresh();
+  if(isConfigured()&&hasPaired())scheduleSync();
   if('serviceWorker' in navigator && location.protocol==='https:' || location.hostname==='localhost' || location.hostname==='127.0.0.1')navigator.serviceWorker?.register('./service-worker.js').catch(err=>console.warn('PWA sem service worker:',err));
 }
 init().catch(error=>{$('#view').innerHTML=`<div class="empty"><strong>Não foi possível abrir a base local.</strong><p>${h(error.message)}. Experimenta abrir em Safari normal, fora do modo privado.</p></div>`;console.error(error);});
